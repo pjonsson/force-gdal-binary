@@ -1,0 +1,144 @@
+diff --git a/Dockerfile b/Dockerfile
+index 2338d49..9472417 100755
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -1,3 +1,4 @@
++# syntax=docker/dockerfile:1
+ ##########################################################################
+ # 
+ # This file is part of FORCE - Framework for Operational Radiometric 
+@@ -30,22 +31,106 @@
+ FROM davidfrantz/base:latest as force_builder
+ 
+ # Environment variables
++ENV HOME=/home/ubuntu
++ENV PATH="$HOME/bin:$PATH"
+ ENV SOURCE_DIR $HOME/src/force
+ ENV INSTALL_DIR $HOME/bin
+ 
++RUN rm -f /etc/apt/apt.conf.d/docker-clean && \
++    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
++    echo 'Acquire::Retries "10";' > /etc/apt/apt.conf.d/80-retries
++RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
++    --mount=type=cache,target=/var/lib/apt,sharing=locked \
++    export DEBIAN_FRONTEND=noninteractive && \
++    apt-get update          && \
++    apt-get -qq -y upgrade  && \
++    apt-get -y install \
++      ca-certificates \
++      curl \
++      gpg \
++      software-properties-common && \
++    curl -fsSL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0xE298A3A825C0D65DFD57CBB651716619E084DAB9" | gpg --dearmor -o /etc/apt/keyrings/r-project-keyring.gpg && \
++    add-apt-repository "deb https://cloud.r-project.org/bin/linux/ubuntu $(lsb_release -sc)-cran40/" && \
++    apt-get -qq -y --no-install-recommends install \
++        aria2 \
++        autoconf \
++        automake \
++        bzip2 \
++        curl \
++        dos2unix \
++        gcc \
++        g++ \
++        file \
++        git \
++        libarmadillo-dev \
++        libc6-dev \
++        libcurl4-gnutls-dev \
++        libgsl-dev \
++        libopencv-dev \
++        libpq-dev \
++        libtool \
++        linux-libc-dev \
++        lockfile-progs \
++        make \
++        parallel \
++        patch \
++        python3.12 \
++        python-is-python3 \
++        python3-dev \
++        python3-numpy \
++        python3-pip \
++        python3-scipy \
++        r-base \
++        rename \
++        unzip \
++        > /dev/null && \
++    apt-get -qq -y --no-install-recommends install \
++       gfortran \
++       libcurl4-openssl-dev \
++       libglpk-dev \
++       libicu-dev \
++       libudunits2-dev \
++       libxml2-dev \
++       pandoc \
++       > /dev/null
++
++RUN python3 -m pip install --break-system-packages --no-cache-dir \
++    gsutil \
++    git+https://github.com/ernstste/landsatlinks.git && \
++#
++# Install R packages
++#
++# INFO: These are not all R packages from davidfrantz/base:latest, some
++#       of them require gdal-packages which clashes with the GDAL image
++#       this build is using.
++#
++#       The package installation fails if not all system packages that the R
++#       packages require are listed in the second apt-get invocation above.
++Rscript -e "install.packages(c('sp', 'https://cran.r-project.org/src/contrib/Archive/rgdal/rgdal_1.6-7.tar.gz'), repos='https://cloud.r-project.org', Ncpus=4)" && \
++Rscript -e "install.packages('pak', repos='https://r-lib.github.io/p/pak/dev/')" && \
++CORES=$(nproc) && \
++export MAKEFLAGS="-j$CORES" && \
++Rscript -e "pak::pkg_install(c('rmarkdown','plotly', 'stringi', 'stringr', 'tm', 'knitr', 'dplyr', 'bib2df', 'wordcloud', 'wordcloud2', 'network', 'intergraph','igraph', 'htmlwidgets', 'units', 'snow', 'snowfall', 'getopt'))" && \
++#
++# Clear installation data
++rm -rf /root/.cache /tmp/Rtmp*
++
+ # build args
+ ARG debug=disable
+ 
++USER ubuntu
++
+ # Copy src to SOURCE_DIR
+ RUN mkdir -p $SOURCE_DIR
+ WORKDIR $SOURCE_DIR
+-COPY --chown=docker:docker . .
++COPY --chown=ubuntu:ubuntu . .
+ 
+ # Build, install, check FORCE
+ RUN echo "building FORCE" && \
+   ./debug.sh $debug && \
+   sed -i "/^INSTALLDIR=/cINSTALLDIR=$INSTALL_DIR/" Makefile && \
+-  make -j && \
++  perl -pi -e 's#R \\#\\#' Makefile && \
++  make -j$(nproc) && \
+   make install && \
+   make clean && \
+   cd $HOME && \
+@@ -56,10 +141,22 @@ RUN echo "building FORCE" && \
+ 
+ FROM davidfrantz/base:latest as force
+ 
+-COPY --chown=docker:docker --from=force_builder $HOME/bin $HOME/bin
+-COPY --chown=docker:docker --from=force_builder $HOME/force-udf $HOME/udf
++RUN rm -f /etc/apt/apt.conf.d/docker-clean && \
++    echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
++    echo 'Acquire::Retries "10";' > /etc/apt/apt.conf.d/80-retries
++RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
++    --mount=type=cache,target=/var/lib/apt,sharing=locked \
++    export DEBIAN_FRONTEND=noninteractive && \
++    apt-get update          && \
++    apt-get -qq -y upgrade  && \
++    apt-get -qq -y --no-install-recommends install \
++        bzip2 \
++        > /dev/null
++
++ENV HOME=/home/ubuntu
+ 
+-WORKDIR /home/docker
++COPY --chown=ubuntu:ubuntu --from=force_builder $HOME/bin $HOME/bin
++COPY --chown=ubuntu:ubuntu --from=force_builder $HOME/force-udf $HOME/udf
+ 
+ ENV R_HOME=/usr/lib/R
+ ENV LD_LIBRARY_PATH=$R_HOME/lib

@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: BSD-2-Clause
+name: CI
+
+on:
+  pull_request:
+    branches: [ main ]
+
+# When a PR is updated, cancel the jobs from the previous version. Merges
+# do not define head_ref, so use run_id to never cancel those jobs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  Force-Build:
+    timeout-minutes: 90
+
+    strategy:
+        fail-fast: false
+        matrix:
+            os: [ ubuntu-latest ]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - name: Check out the repo
+      uses: actions/checkout@v4
+    - name: Build Force
+      run: |
+        git clone --depth 1 --single-branch --branch develop https://github.com/davidfrantz/force
+        cd force
+        patch -p1 < ../patches/030-Makefile.patch
+        patch -p1 < ../patches/040-Dockerfile.patch
+        docker build --build-context davidfrantz/base:latest=docker-image://ghcr.io/osgeo/gdal:ubuntu-small-3.10.0 -t force-local .
+        docker run --rm -t --user root -v $(pwd):/output force-local bash -c "cd /home/ubuntu && tar cjf /output/force-${{ matrix.os }}.tar.bz2 bin/ udf/"
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: force-${{ matrix.os }}
+        path: force/force-${{ matrix.os }}.tar.bz2
+        retention-days: 5
