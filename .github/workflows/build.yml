@@ -24,7 +24,7 @@ jobs:
 
     steps:
     - name: Check out the repo
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
     - name: Build Force
       run: |
         git clone --depth 1 --single-branch --branch develop https://github.com/davidfrantz/force
