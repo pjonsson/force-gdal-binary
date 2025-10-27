@@ -35,7 +35,7 @@ jobs:
         docker run --rm -t --user root -v $(pwd):/output force-local bash -c "cd /home/ubuntu && tar cjf /output/force-${{ matrix.os }}.tar.bz2 bin/ udf/"
 
     - name: Upload artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: force-${{ matrix.os }}
         path: force/force-${{ matrix.os }}.tar.bz2
